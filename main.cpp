@@ -11,12 +11,12 @@
 #define NAMELEN 40
 #define TEXTURE_AMOUNT 1
 #define OBJECT_AMOUNT 20
+#define PI 3.14159265
 
 struct texture_obj {
 	string name[TEXTURE_AMOUNT];
 	GLuint number[TEXTURE_AMOUNT];
 }texture_map;
-
 
 int check_object_type(char *);
 void bind_texture_map(int, int);
@@ -27,6 +27,7 @@ void TextureInit(void);
 void display();
 void reshape(GLsizei, GLsizei);
 void keyboard(unsigned char, int, int);
+void draw_image(void);
 
 mesh *object[OBJECT_AMOUNT];
 viewing *view;
@@ -35,6 +36,8 @@ scene *scenes;
 
 int winh, winw;
 int Gargc, object_count = 0;
+int current_key = 0;
+float obj[3];
 char file_name[OBJECT_AMOUNT][NAMELEN];
 
 GLfloat zoomfactor = 1.0;
@@ -286,9 +289,22 @@ void keyboard(unsigned char key, int x, int y) {
 	case 'D': rotatefactor += 1; if (rotatefactor == 360) rotatefactor = 0; break;
 	case 'a': rotatefactor -= 1; if (rotatefactor < 0) rotatefactor = 359; break;
 	case 'A': rotatefactor -= 1; if (rotatefactor < 0) rotatefactor = 359;  break;
-	case '1': break;
-	case '2': break;
-	case '3': break;
+	case 'r': rotatefactor = 0; zoomfactor = 1.0; current_key = 0; break;
+	case 'R': rotatefactor = 0; zoomfactor = 1.0; current_key = 0; break;
+	case 'b': rotatefactor = 180; current_key = 0; break;
+	case 'B': rotatefactor = 180; current_key = 0; break;
+
+	case '1': {
+		if (((rotatefactor <= 90) && (rotatefactor >= 0)) || ((rotatefactor >= 270) && (rotatefactor <= 359))) {
+			obj[0] = -10; obj[1] = 12; obj[2] = 0; current_key = 1; break;
+		}
+		else {
+			obj[0] = 10; obj[1] = 12; obj[2] = 0; current_key = 1; break;
+		}
+	}	
+	case '2': obj[0] = -70; obj[1] = 12; obj[2] = 0; current_key = 2; break;
+	case '3': obj[0] = -170; obj[1] = 12; obj[2] = 0; current_key = 3; break;
+	case '0': current_key = 0; break;
 
 	case 27: exit(0); break;
 	}
@@ -310,39 +326,12 @@ void light() {
 		GLfloat light_diffuse[] = { lights->lightsource[i].dr, lights->lightsource[i].dg, lights->lightsource[i].db, 1.0 };
 		GLfloat light_specular[] = { lights->lightsource[i].sr, lights->lightsource[i].sg, lights->lightsource[i].sb, 1.0 };
 
-
-		// set lighti property
-		switch (i) {
-		case 0:
-			glEnable(GL_LIGHT0);
-			glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-			glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
-			glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
-			glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
-			break;
-
-		case 1:
-			glEnable(GL_LIGHT1);
-			glLightfv(GL_LIGHT1, GL_POSITION, light_position);
-			glLightfv(GL_LIGHT1, GL_DIFFUSE, light_diffuse);
-			glLightfv(GL_LIGHT1, GL_SPECULAR, light_specular);
-			glLightfv(GL_LIGHT1, GL_AMBIENT, light_ambient);
-			break;
-
-		case 2:
-			glEnable(GL_LIGHT2);
-			glLightfv(GL_LIGHT2, GL_POSITION, light_position);
-			glLightfv(GL_LIGHT2, GL_DIFFUSE, light_diffuse);
-			glLightfv(GL_LIGHT2, GL_SPECULAR, light_specular);
-			glLightfv(GL_LIGHT2, GL_AMBIENT, light_ambient);
-			break;
-		case 3:
-			glEnable(GL_LIGHT3);
-			glLightfv(GL_LIGHT3, GL_POSITION, light_position);
-			glLightfv(GL_LIGHT3, GL_DIFFUSE, light_diffuse);
-			glLightfv(GL_LIGHT3, GL_SPECULAR, light_specular);
-			glLightfv(GL_LIGHT3, GL_AMBIENT, light_ambient);
-		}	
+		glEnable(GL_LIGHT0+i);
+		glLightfv(GL_LIGHT0+i, GL_POSITION, light_position);
+		glLightfv(GL_LIGHT0+i, GL_DIFFUSE, light_diffuse);
+		glLightfv(GL_LIGHT0+i, GL_SPECULAR, light_specular);
+		glLightfv(GL_LIGHT0+i, GL_AMBIENT, light_ambient);
+			
 	}
 
 	//ambient
@@ -357,24 +346,83 @@ void display() {
 	glLoadIdentity();
 	gluPerspective((GLdouble)view->angle, (GLfloat)winw / (GLfloat)winh, (GLdouble)view->dnear, (GLdouble)view->dfar);
 
-	// viewing and modeling transformation
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-	gluLookAt(view->eye[0] * zoomfactor, view->eye[1] * zoomfactor, view->eye[2] * zoomfactor,
-		view->vat[0], view->vat[1], view->vat[2],
-		view->vup[0], view->vup[1], view->vup[2]);
+	glClear(GL_ACCUM_BUFFER_BIT);
 
-	glRotated(rotatefactor, 0.f, 1.f, 0.f);
+	if (current_key != 0) {
+		int n = 8;
+		float distance = 0;
+		float aperture = 0.2;
+		float right[3], temp[3], new_up[3];
 
-	light();
+		//vector = eye-object
+		temp[0] = obj[0] - view->eye[0];
+		temp[1] = obj[1] - view->eye[1];
+		temp[2] = obj[2] - view->eye[2];
 
+		//right = vector cross up
+		right[0] = (temp[1] * view->vup[2]) - (temp[2] * view->vup[1]);
+		right[1] = (temp[2] * view->vup[0]) - (temp[0] * view->vup[2]);
+		right[2] = (temp[0] * view->vup[1]) - (temp[1] * view->vup[0]);
+
+		//Normalize
+		distance = sqrt(pow(right[0], 2) + pow(right[1], 2) + pow(right[2], 2));
+		right[0] /= distance;
+		right[1] /= distance;
+		right[2] /= distance;
+
+		for (int i = 0; i < n; i++) {
+			// viewing and modeling transformation
+			GLfloat bokeh[3];
+			bokeh[0] = (right[0] * cos(2 * PI * i / n)) + (view->vup[0] * sin(2 * PI *i / n));
+			bokeh[1] = right[1] * cos(2 * PI * i / n) + view->vup[1] * sin(2 * PI *i / n);
+			bokeh[2] = right[2] * cos(2 * PI * i / n) + view->vup[2] * sin(2 * PI *i / n);
+
+			glMatrixMode(GL_MODELVIEW);
+
+			glLoadIdentity();
+			gluLookAt((view->eye[0] + (aperture*bokeh[0])) * zoomfactor, (view->eye[1] + (aperture*bokeh[1])) * zoomfactor, (view->eye[2] + (aperture*bokeh[2])) * zoomfactor,
+				obj[0], obj[1], obj[2],
+				view->vup[0], view->vup[1], view->vup[2]);
+
+			glRotated(rotatefactor, 0.f, 1.f, 0.f);
+			light();
+
+			draw_image();
+			glAccum(i ? GL_ACCUM : GL_LOAD, 1.0 / n);
+		}
+		glAccum(GL_RETURN, 1);
+	}
+	else {
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+		gluLookAt(view->eye[0] * zoomfactor, view->eye[1] * zoomfactor, view->eye[2] * zoomfactor,
+			view->vat[0], view->vat[1], view->vat[2],
+			view->vup[0], view->vup[1], view->vup[2]);
+		
+		glRotated(rotatefactor, 0.f, 1.f, 0.f);
+		
+		light();
+		draw_image();
+	}
+
+	glutSwapBuffers();
+}
+
+void reshape(GLsizei w, GLsizei h) {
+	winw = w;
+	winh = h;
+
+	glViewport(view->viewport[0], view->viewport[1], winw, winh);
+}
+
+void draw_image(void) {
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 	glClearDepth(1.0f);
 	glEnable(GL_STENCIL_TEST);
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LEQUAL);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT | GL_ACCUM_BUFFER_BIT);
-	//  
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
 	int i, j;
 
 	//first mirror area set stencil to 1
@@ -388,76 +436,15 @@ void display() {
 		for (j = 0; j < object_count; j++) {
 
 			if (!strcmp(scenes->obj_lists[i].object_name, file_name[j])) {
+				//only do mirror part
 				if (strcmp("Mirror.obj", file_name[j]))
 					break;
-
-				if (scenes->obj_lists[i].texture_amount == 1) {
-					cout << scenes->obj_lists[i].object_name << endl;
-					glActiveTexture(GL_TEXTURE0);
-					glEnable(GL_TEXTURE_2D);
-					glEnable(GL_ALPHA_TEST);
-					glAlphaFunc(GL_GREATER, 0.5f);
-
-					bind_texture_map(i, 0);
-
-					glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-				}
-				else if (scenes->obj_lists[i].texture_amount == 2) {
-
-					//bind texture 0
-					glActiveTexture(GL_TEXTURE0);
-					glEnable(GL_TEXTURE_2D);
-
-					bind_texture_map(i, 0);
-
-					glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-					glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-
-					//bind texture 1
-					glActiveTexture(GL_TEXTURE1);
-					glEnable(GL_TEXTURE_2D);
-
-					bind_texture_map(i, 1);
-
-					glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-					glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-
-				}
-				else if (scenes->obj_lists[i].texture_amount == 6) {
-					//glActiveTexture(GL_TEXTURE0);
-					glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
-					glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
-					glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
-
-					glEnable(GL_TEXTURE_GEN_S);
-					glEnable(GL_TEXTURE_GEN_T);
-					glEnable(GL_TEXTURE_GEN_R);
-
-					glEnable(GL_TEXTURE_CUBE_MAP);
-					glBindTexture(GL_TEXTURE_CUBE_MAP, texture_map.number[0]);
-
-					glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-				}
 
 				for (size_t k = 0; k < object[j]->fTotal; ++k)
 				{
 					// set material property if this face used different material
-					if (lastMaterial != object[j]->faceList[k].m)
-					{
-						lastMaterial = (int)object[j]->faceList[k].m;
-						glMaterialfv(GL_FRONT, GL_AMBIENT, object[j]->mList[lastMaterial].Ka);
-						glMaterialfv(GL_FRONT, GL_DIFFUSE, object[j]->mList[lastMaterial].Kd);
-						glMaterialfv(GL_FRONT, GL_SPECULAR, object[j]->mList[lastMaterial].Ks);
-						glMaterialfv(GL_FRONT, GL_SHININESS, &object[j]->mList[lastMaterial].Ns);
-
-						//you can obtain the texture name by object->mList[lastMaterial].map_Kd
-						//load them once in the main function before mainloop
-						//bind them in display function here	
-
-					}
 					glPushMatrix();
 
-					//printf("angle = %f, %f %f %f\n", scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
 					glTranslatef(scenes->obj_lists[i].trans_x, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
 					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
 					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
@@ -483,33 +470,6 @@ void display() {
 
 				}
 
-				if (scenes->obj_lists[i].texture_amount == 1) {
-					glActiveTexture(GL_TEXTURE0);
-					glDisable(GL_TEXTURE_2D);
-					glDisable(GL_ALPHA_TEST);
-					glBindTexture(GL_TEXTURE_2D, 0);
-				}
-				else if (scenes->obj_lists[i].texture_amount == 2) {
-					//unbind texture 1
-					glActiveTexture(GL_TEXTURE1);
-					glDisable(GL_TEXTURE_2D);
-					glBindTexture(GL_TEXTURE_2D, 0);
-
-					//unbind texture 0
-					glActiveTexture(GL_TEXTURE0);
-					glDisable(GL_TEXTURE_2D);
-					glBindTexture(GL_TEXTURE_2D, 0);
-				}
-				else if (scenes->obj_lists[i].texture_amount == 6) {
-					glDisable(GL_TEXTURE_GEN_S);
-					glDisable(GL_TEXTURE_GEN_T);
-					glDisable(GL_TEXTURE_GEN_R);
-					glDisable(GL_TEXTURE_CUBE_MAP);
-
-					//glActiveTexture(GL_TEXTURE0);
-					glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
-				}
-
 				break;
 			}
 
@@ -523,56 +483,7 @@ void display() {
 		}
 	}
 
-	/*for (i = 0; i < scenes->count; i++) {
-		int lastMaterial = -1;
-		if (!strcmp(scenes->obj_lists[i].object_name, "Mirror.obj")) {
-			for (size_t k = 0; k < object[i]->fTotal; ++k)
-			{
-				// set material property if this face used different material
-				if (lastMaterial != object[i]->faceList[k].m)
-				{
-					lastMaterial = (int)object[i]->faceList[k].m;
-					glMaterialfv(GL_FRONT, GL_AMBIENT, object[i]->mList[lastMaterial].Ka);
-					glMaterialfv(GL_FRONT, GL_DIFFUSE, object[j]->mList[lastMaterial].Kd);
-					glMaterialfv(GL_FRONT, GL_SPECULAR, object[j]->mList[lastMaterial].Ks);
-					glMaterialfv(GL_FRONT, GL_SHININESS, &object[j]->mList[lastMaterial].Ns);
-
-					//you can obtain the texture name by object->mList[lastMaterial].map_Kd
-					//load them once in the main function before mainloop
-					//bind them in display function here	
-
-				}
-				glPushMatrix();
-
-				//printf("angle = %f, %f %f %f\n", scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
-				glTranslatef(scenes->obj_lists[i].trans_x, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
-				glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
-				glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
-
-				glBegin(GL_TRIANGLES);
-				for (size_t l = 0; l<3; ++l)
-				{
-					//textex corrd. object->tList[object->faceList[i][j].t].ptr
-					if (scenes->obj_lists[i].texture_amount == 1) {
-						glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
-					}
-					else if (scenes->obj_lists[i].texture_amount == 2) {
-						glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
-						glMultiTexCoord2fv(GL_TEXTURE1, object[j]->tList[object[j]->faceList[k][l].t].ptr);
-					}
-
-					glNormal3fv(object[j]->nList[object[j]->faceList[k][l].n].ptr);
-					glVertex3fv(object[j]->vList[object[j]->faceList[k][l].v].ptr);
-				}
-				glEnd();
-
-				glPopMatrix();
-
-			}
-		}
-	}*/
-
-	//set(stencil buffer) object covered by mirror back to 0
+	//set(stencil buffer) object covered by first mirror back to 0
 	glStencilFunc(GL_EQUAL, 1, 0xFF);
 	glStencilOp(GL_KEEP, GL_KEEP, GL_DECR);
 	for (i = 0; i < scenes->count; i++) {
@@ -585,23 +496,8 @@ void display() {
 
 				for (size_t k = 0; k < object[j]->fTotal; ++k)
 				{
-					// set material property if this face used different material
-					if (lastMaterial != object[j]->faceList[k].m)
-					{
-						lastMaterial = (int)object[j]->faceList[k].m;
-						glMaterialfv(GL_FRONT, GL_AMBIENT, object[j]->mList[lastMaterial].Ka);
-						glMaterialfv(GL_FRONT, GL_DIFFUSE, object[j]->mList[lastMaterial].Kd);
-						glMaterialfv(GL_FRONT, GL_SPECULAR, object[j]->mList[lastMaterial].Ks);
-						glMaterialfv(GL_FRONT, GL_SHININESS, &object[j]->mList[lastMaterial].Ns);
-
-						//you can obtain the texture name by object->mList[lastMaterial].map_Kd
-						//load them once in the main function before mainloop
-						//bind them in display function here	
-
-					}
 					glPushMatrix();
 
-					//printf("angle = %f, %f %f %f\n", scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
 					glTranslatef(scenes->obj_lists[i].trans_x, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
 					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
 					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
@@ -639,7 +535,7 @@ void display() {
 		}
 	}
 
-	//draw  objects stencil eual to 0
+	//draw objects stencil eual to 0
 	glStencilFunc(GL_EQUAL, 0, 0xFF);
 	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -786,8 +682,7 @@ void display() {
 		}
 	}
 
-
-	//draw reflected image which stencil equal to 1    !!!!!!!
+	//draw reflected image which is stencil equal to 1    !!!!!!!
 	glStencilFunc(GL_EQUAL, 1, 0xFF);
 	for (i = 0; i < scenes->count; i++) {
 		int lastMaterial = -1;
@@ -826,9 +721,9 @@ void display() {
 
 					glScalef(-1, 1, 1);
 
-					glTranslatef(scenes->obj_lists[i].trans_x+temp, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
-					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y , scenes->obj_lists[i].rotate_z );
-					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);			
+					glTranslatef(scenes->obj_lists[i].trans_x + temp, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
+					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
 
 					glBegin(GL_TRIANGLES);
 					for (size_t l = 0; l < 3; ++l)
@@ -847,7 +742,7 @@ void display() {
 					}
 					glEnd();
 
-					
+
 					glPopMatrix();
 
 				}
@@ -864,18 +759,576 @@ void display() {
 			exit(2);
 		}
 	}
-	
-	
+
+	//second mirror area set stencil to 2
+	glStencilFunc(GL_EQUAL, 1, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	glDepthMask(GL_FALSE);
+	for (i = 0; i < scenes->count; i++) {
+		int lastMaterial = -1;
+
+		for (j = 0; j < object_count; j++) {
+
+			if (!strcmp(scenes->obj_lists[i].object_name, file_name[j])) {
+				//only do mirror part
+				if (strcmp("Mirror.obj", file_name[j]))
+					break;
+
+				for (size_t k = 0; k < object[j]->fTotal; ++k)
+				{
+					// set material property if this face used different material
+					glPushMatrix();
+
+					glTranslatef(scenes->obj_lists[i].trans_x, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
+					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
+
+					glBegin(GL_TRIANGLES);
+					for (size_t l = 0; l < 3; ++l)
+					{
+						//textex corrd. object->tList[object->faceList[i][j].t].ptr
+						if (scenes->obj_lists[i].texture_amount == 1) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+						else if (scenes->obj_lists[i].texture_amount == 2) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+							glMultiTexCoord2fv(GL_TEXTURE1, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+
+						glNormal3fv(object[j]->nList[object[j]->faceList[k][l].n].ptr);
+						glVertex3fv(object[j]->vList[object[j]->faceList[k][l].v].ptr);
+					}
+					glEnd();
+
+					glPopMatrix();
+
+				}
+
+				break;
+			}
+
+		}
+
+		if (j == object_count) {
+			cout << scenes->obj_lists[i].object_name << " Object not found" << endl;
+			int temp;
+			cin >> temp;
+			exit(2);
+		}
+	}
+
+	//set(stencil buffer) object covered by second mirror back to 1
+	glStencilFunc(GL_EQUAL, 2, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_DECR);
+	for (i = 0; i < scenes->count; i++) {
+		int lastMaterial = -1;
+
+		for (j = 0; j < object_count; j++) {
+			if (!strcmp(scenes->obj_lists[i].object_name, file_name[j])) {
+				if (!strcmp("Mirror.obj", file_name[j]))
+					break;
+
+				for (size_t k = 0; k < object[j]->fTotal; ++k)
+				{
+					glPushMatrix();
+
+					glTranslatef(scenes->obj_lists[i].trans_x, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
+					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
+
+					glBegin(GL_TRIANGLES);
+					for (size_t l = 0; l < 3; ++l)
+					{
+						//textex corrd. object->tList[object->faceList[i][j].t].ptr
+						if (scenes->obj_lists[i].texture_amount == 1) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+						else if (scenes->obj_lists[i].texture_amount == 2) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+							glMultiTexCoord2fv(GL_TEXTURE1, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+
+						glNormal3fv(object[j]->nList[object[j]->faceList[k][l].n].ptr);
+						glVertex3fv(object[j]->vList[object[j]->faceList[k][l].v].ptr);
+					}
+					glEnd();
+
+					glPopMatrix();
+
+				}
+				break;
+			}
+
+		}
+
+		if (j == object_count) {
+			cout << scenes->obj_lists[i].object_name << " Object not found" << endl;
+			int temp;
+			cin >> temp;
+			exit(2);
+		}
+	}
+
+	//draw reflected image which is stencil equal to 2
+	glStencilFunc(GL_EQUAL, 2, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+	for (i = 0; i < scenes->count; i++) {
+		int lastMaterial = -1;
+		for (j = 0; j < object_count; j++) {
+			if (!strcmp(scenes->obj_lists[i].object_name, file_name[j])) {
+				if (!strcmp("Mirror.obj", file_name[j]))
+					break;
+
+				for (size_t k = 0; k < object[j]->fTotal; ++k)
+				{
+					// set material property if this face used different material
+					if (lastMaterial != object[j]->faceList[k].m)
+					{
+						lastMaterial = (int)object[j]->faceList[k].m;
+						glMaterialfv(GL_FRONT, GL_AMBIENT, object[j]->mList[lastMaterial].Ka);
+						glMaterialfv(GL_FRONT, GL_DIFFUSE, object[j]->mList[lastMaterial].Kd);
+						glMaterialfv(GL_FRONT, GL_SPECULAR, object[j]->mList[lastMaterial].Ks);
+						glMaterialfv(GL_FRONT, GL_SHININESS, &object[j]->mList[lastMaterial].Ns);
+
+						//you can obtain the texture name by object->mList[lastMaterial].map_Kd
+						//load them once in the main function before mainloop
+						//bind them in display function here	
+
+					}
+
+					glPushMatrix();
+
+					//printf("angle = %f, %f %f %f\n", scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+
+					float temp;
+
+					if (((rotatefactor <= 90) && (rotatefactor >= 0)) || ((rotatefactor >= 270) && (rotatefactor <= 359)))
+						temp = -160;
+					else
+						temp = 160;
+
+					glTranslatef(scenes->obj_lists[i].trans_x + temp, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
+					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
+
+					glBegin(GL_TRIANGLES);
+					for (size_t l = 0; l < 3; ++l)
+					{
+						//textex corrd. object->tList[object->faceList[i][j].t].ptr
+						if (scenes->obj_lists[i].texture_amount == 1) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+						else if (scenes->obj_lists[i].texture_amount == 2) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+							glMultiTexCoord2fv(GL_TEXTURE1, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+
+						glNormal3fv(object[j]->nList[object[j]->faceList[k][l].n].ptr);
+						glVertex3fv(object[j]->vList[object[j]->faceList[k][l].v].ptr);
+					}
+					glEnd();
+
+
+					glPopMatrix();
+
+				}
+
+				break;
+			}
+
+		}
+
+		if (j == object_count) {
+			cout << scenes->obj_lists[i].object_name << " Object not found" << endl;
+			int temp;
+			cin >> temp;
+			exit(2);
+		}
+	}
+
+
+	//third mirror area set stencil to 3
+	glStencilFunc(GL_EQUAL, 2, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	glDepthMask(GL_FALSE);
+	for (i = 0; i < scenes->count; i++) {
+		int lastMaterial = -1;
+		for (j = 0; j < object_count; j++) {
+
+			if (!strcmp(scenes->obj_lists[i].object_name, file_name[j])) {
+				//only do mirror part
+				if (strcmp("Mirror.obj", file_name[j]))
+					break;
+
+				for (size_t k = 0; k < object[j]->fTotal; ++k)
+				{
+					// set material property if this face used different material
+					glPushMatrix();
+
+					glTranslatef(scenes->obj_lists[i].trans_x, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
+					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
+
+					glBegin(GL_TRIANGLES);
+					for (size_t l = 0; l < 3; ++l)
+					{
+						//textex corrd. object->tList[object->faceList[i][j].t].ptr
+						if (scenes->obj_lists[i].texture_amount == 1) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+						else if (scenes->obj_lists[i].texture_amount == 2) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+							glMultiTexCoord2fv(GL_TEXTURE1, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+
+						glNormal3fv(object[j]->nList[object[j]->faceList[k][l].n].ptr);
+						glVertex3fv(object[j]->vList[object[j]->faceList[k][l].v].ptr);
+					}
+					glEnd();
+
+					glPopMatrix();
+
+				}
+
+				break;
+			}
+
+		}
+
+		if (j == object_count) {
+			cout << scenes->obj_lists[i].object_name << " Object not found" << endl;
+			int temp;
+			cin >> temp;
+			exit(2);
+		}
+	}
+
+	//set(stencil buffer) object covered by third mirror back to 2
+	glStencilFunc(GL_EQUAL, 3, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_DECR);
+	for (i = 0; i < scenes->count; i++) {
+		int lastMaterial = -1;
+
+		for (j = 0; j < object_count; j++) {
+			if (!strcmp(scenes->obj_lists[i].object_name, file_name[j])) {
+				if (!strcmp("Mirror.obj", file_name[j]))
+					break;
+
+				for (size_t k = 0; k < object[j]->fTotal; ++k)
+				{
+					glPushMatrix();
+
+					glTranslatef(scenes->obj_lists[i].trans_x, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
+					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
+
+					glBegin(GL_TRIANGLES);
+					for (size_t l = 0; l < 3; ++l)
+					{
+						//textex corrd. object->tList[object->faceList[i][j].t].ptr
+						if (scenes->obj_lists[i].texture_amount == 1) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+						else if (scenes->obj_lists[i].texture_amount == 2) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+							glMultiTexCoord2fv(GL_TEXTURE1, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+
+						glNormal3fv(object[j]->nList[object[j]->faceList[k][l].n].ptr);
+						glVertex3fv(object[j]->vList[object[j]->faceList[k][l].v].ptr);
+					}
+					glEnd();
+
+					glPopMatrix();
+
+				}
+				break;
+			}
+
+		}
+
+		if (j == object_count) {
+			cout << scenes->obj_lists[i].object_name << " Object not found" << endl;
+			int temp;
+			cin >> temp;
+			exit(2);
+		}
+	}
+
+	//draw reflected image which is stencil equal to 3
+	glStencilFunc(GL_EQUAL, 3, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+	for (i = 0; i < scenes->count; i++) {
+		int lastMaterial = -1;
+		for (j = 0; j < object_count; j++) {
+			if (!strcmp(scenes->obj_lists[i].object_name, file_name[j])) {
+				if (!strcmp("Mirror.obj", file_name[j]))
+					break;
+
+				for (size_t k = 0; k < object[j]->fTotal; ++k)
+				{
+					// set material property if this face used different material
+					if (lastMaterial != object[j]->faceList[k].m)
+					{
+						lastMaterial = (int)object[j]->faceList[k].m;
+						glMaterialfv(GL_FRONT, GL_AMBIENT, object[j]->mList[lastMaterial].Ka);
+						glMaterialfv(GL_FRONT, GL_DIFFUSE, object[j]->mList[lastMaterial].Kd);
+						glMaterialfv(GL_FRONT, GL_SPECULAR, object[j]->mList[lastMaterial].Ks);
+						glMaterialfv(GL_FRONT, GL_SHININESS, &object[j]->mList[lastMaterial].Ns);
+
+						//you can obtain the texture name by object->mList[lastMaterial].map_Kd
+						//load them once in the main function before mainloop
+						//bind them in display function here	
+
+					}
+
+					glPushMatrix();
+
+					//printf("angle = %f, %f %f %f\n", scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+
+					float temp;
+
+					if (((rotatefactor <= 90) && (rotatefactor >= 0)) || ((rotatefactor >= 270) && (rotatefactor <= 359)))
+						temp = 240;
+					else
+						temp = -240;
+
+					glScalef(-1, 1, 1);
+
+					glTranslatef(scenes->obj_lists[i].trans_x + temp, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
+					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
+
+					glBegin(GL_TRIANGLES);
+					for (size_t l = 0; l < 3; ++l)
+					{
+						//textex corrd. object->tList[object->faceList[i][j].t].ptr
+						if (scenes->obj_lists[i].texture_amount == 1) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+						else if (scenes->obj_lists[i].texture_amount == 2) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+							glMultiTexCoord2fv(GL_TEXTURE1, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+
+						glNormal3fv(object[j]->nList[object[j]->faceList[k][l].n].ptr);
+						glVertex3fv(object[j]->vList[object[j]->faceList[k][l].v].ptr);
+					}
+					glEnd();
+
+
+					glPopMatrix();
+
+				}
+
+				break;
+			}
+
+		}
+
+		if (j == object_count) {
+			cout << scenes->obj_lists[i].object_name << " Object not found" << endl;
+			int temp;
+			cin >> temp;
+			exit(2);
+		}
+	}
+
+	//fourth mirror area set stencil to 4
+	glStencilFunc(GL_EQUAL, 3, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	glDepthMask(GL_FALSE);
+	for (i = 0; i < scenes->count; i++) {
+		int lastMaterial = -1;
+
+		for (j = 0; j < object_count; j++) {
+
+			if (!strcmp(scenes->obj_lists[i].object_name, file_name[j])) {
+				//only do mirror part
+				if (strcmp("Mirror.obj", file_name[j]))
+					break;
+
+				for (size_t k = 0; k < object[j]->fTotal; ++k)
+				{
+					// set material property if this face used different material
+					glPushMatrix();
+
+					glTranslatef(scenes->obj_lists[i].trans_x, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
+					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
+
+					glBegin(GL_TRIANGLES);
+					for (size_t l = 0; l < 3; ++l)
+					{
+						//textex corrd. object->tList[object->faceList[i][j].t].ptr
+						if (scenes->obj_lists[i].texture_amount == 1) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+						else if (scenes->obj_lists[i].texture_amount == 2) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+							glMultiTexCoord2fv(GL_TEXTURE1, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+
+						glNormal3fv(object[j]->nList[object[j]->faceList[k][l].n].ptr);
+						glVertex3fv(object[j]->vList[object[j]->faceList[k][l].v].ptr);
+					}
+					glEnd();
+
+					glPopMatrix();
+
+				}
+
+				break;
+			}
+
+		}
+
+		if (j == object_count) {
+			cout << scenes->obj_lists[i].object_name << " Object not found" << endl;
+			int temp;
+			cin >> temp;
+			exit(2);
+		}
+	}
+
+	//set(stencil buffer) object covered by second mirror back to 3
+	glStencilFunc(GL_EQUAL, 4, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_DECR);
+	for (i = 0; i < scenes->count; i++) {
+		int lastMaterial = -1;
+
+		for (j = 0; j < object_count; j++) {
+			if (!strcmp(scenes->obj_lists[i].object_name, file_name[j])) {
+				if (!strcmp("Mirror.obj", file_name[j]))
+					break;
+
+				for (size_t k = 0; k < object[j]->fTotal; ++k)
+				{
+					glPushMatrix();
+
+					glTranslatef(scenes->obj_lists[i].trans_x, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
+					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
+
+					glBegin(GL_TRIANGLES);
+					for (size_t l = 0; l < 3; ++l)
+					{
+						//textex corrd. object->tList[object->faceList[i][j].t].ptr
+						if (scenes->obj_lists[i].texture_amount == 1) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+						else if (scenes->obj_lists[i].texture_amount == 2) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+							glMultiTexCoord2fv(GL_TEXTURE1, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+
+						glNormal3fv(object[j]->nList[object[j]->faceList[k][l].n].ptr);
+						glVertex3fv(object[j]->vList[object[j]->faceList[k][l].v].ptr);
+					}
+					glEnd();
+
+					glPopMatrix();
+
+				}
+				break;
+			}
+
+		}
+
+		if (j == object_count) {
+			cout << scenes->obj_lists[i].object_name << " Object not found" << endl;
+			int temp;
+			cin >> temp;
+			exit(2);
+		}
+	}
+
+	//draw reflected image which is stencil equal to 4
+	glStencilFunc(GL_EQUAL, 4, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+	for (i = 0; i < scenes->count; i++) {
+		int lastMaterial = -1;
+		for (j = 0; j < object_count; j++) {
+			if (!strcmp(scenes->obj_lists[i].object_name, file_name[j])) {
+				if (!strcmp("Mirror.obj", file_name[j]))
+					break;
+
+				for (size_t k = 0; k < object[j]->fTotal; ++k)
+				{
+					// set material property if this face used different material
+					if (lastMaterial != object[j]->faceList[k].m)
+					{
+						lastMaterial = (int)object[j]->faceList[k].m;
+						glMaterialfv(GL_FRONT, GL_AMBIENT, object[j]->mList[lastMaterial].Ka);
+						glMaterialfv(GL_FRONT, GL_DIFFUSE, object[j]->mList[lastMaterial].Kd);
+						glMaterialfv(GL_FRONT, GL_SPECULAR, object[j]->mList[lastMaterial].Ks);
+						glMaterialfv(GL_FRONT, GL_SHININESS, &object[j]->mList[lastMaterial].Ns);
+
+						//you can obtain the texture name by object->mList[lastMaterial].map_Kd
+						//load them once in the main function before mainloop
+						//bind them in display function here	
+
+					}
+
+					glPushMatrix();
+
+					//printf("angle = %f, %f %f %f\n", scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+
+					float temp;
+
+					if (((rotatefactor <= 90) && (rotatefactor >= 0)) || ((rotatefactor >= 270) && (rotatefactor <= 359)))
+						temp = -320;
+					else
+						temp = 320;
+
+					glTranslatef(scenes->obj_lists[i].trans_x + temp, scenes->obj_lists[i].trans_y, scenes->obj_lists[i].trans_z);
+					glRotatef(scenes->obj_lists[i].angle, scenes->obj_lists[i].rotate_x, scenes->obj_lists[i].rotate_y, scenes->obj_lists[i].rotate_z);
+					glScalef(scenes->obj_lists[i].scale_x, scenes->obj_lists[i].scale_y, scenes->obj_lists[i].scale_z);
+
+					glBegin(GL_TRIANGLES);
+					for (size_t l = 0; l < 3; ++l)
+					{
+						//textex corrd. object->tList[object->faceList[i][j].t].ptr
+						if (scenes->obj_lists[i].texture_amount == 1) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+						else if (scenes->obj_lists[i].texture_amount == 2) {
+							glMultiTexCoord2fv(GL_TEXTURE0, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+							glMultiTexCoord2fv(GL_TEXTURE1, object[j]->tList[object[j]->faceList[k][l].t].ptr);
+						}
+
+						glNormal3fv(object[j]->nList[object[j]->faceList[k][l].n].ptr);
+						glVertex3fv(object[j]->vList[object[j]->faceList[k][l].v].ptr);
+					}
+					glEnd();
+
+
+					glPopMatrix();
+
+				}
+
+				break;
+			}
+
+		}
+
+		if (j == object_count) {
+			cout << scenes->obj_lists[i].object_name << " Object not found" << endl;
+			int temp;
+			cin >> temp;
+			exit(2);
+		}
+	}
 
 	glClear(GL_STENCIL_BUFFER_BIT);
 	glDisable(GL_STENCIL_TEST);
-
-	glutSwapBuffers();
-}
-
-void reshape(GLsizei w, GLsizei h) {
-	winw = w;
-	winh = h;
-
-	glViewport(view->viewport[0], view->viewport[1], winw, winh);
 }
